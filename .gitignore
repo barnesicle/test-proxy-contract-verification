@@ -1,0 +1,12 @@
+.vs
+.vscode
+.idea
+*.iml
+node_modules
+dist
+yarn.lock
+npm-debug.log
+coverage
+testReport
+*.tgz
+*.tar.gz
