@@ -10,3 +10,5 @@ coverage
 testReport
 *.tgz
 *.tar.gz
+test-proxy.iml
+proxy-data
