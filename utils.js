@@ -1,3 +1,4 @@
+const { expect } = require('chai');
 
 function isJson(actualResponseBody) {
 	return actualResponseBody.startsWith('{') || actualResponseBody.startsWith('[');
@@ -22,9 +23,12 @@ function validateMock(mock, response, actualResponseBody) {
 
 
 function addMockResponse(mock, res, req) {
+	console.log(' mock.response',  mock.response)
 	if (typeof mock.response === 'object') {
+		console.log('Added mock response')
 		res.send(mock.response)
 	} else if (typeof mock.response === 'function') {
+		console.log('Added mock response')
 		res.send(mock.response(req))
 	}
 }
@@ -63,22 +67,20 @@ function methods(mock) {
 		return ['all'];
 	}
 
-	const methods = mock.method.split(',');
-	// TODO Validate
-	return methods;
+	return mock.method.split(',');
 }
 
 
 function isLearningMode(options) {
-	return typeof options.learnMode !== 'undefined' && (options.learnMode === true || options.learnMode === 'true')
+	return typeof options.learnMode !== 'undefined' && options.learnMode === 'true'
 }
 
 function isCacheMode(options) {
-	return options.useCache === true;
+	return options.cacheMode === 'true';
 }
 
 function isUpdateCacheMode(options) {
-	return options.updateCache === true;
+	return options.updateCache === 'true';
 }
 
 function createObjectToSave(req, body, response) {

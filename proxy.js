@@ -11,12 +11,17 @@ app.use(bodyParser.urlencoded({ extended: false }))
 app.use(bodyParser.json())
 app.use(cors())
 
+// TODO Have option to save based on the unique request ID so each called gets their own cache. Pass that in?
+// TODO Expire cache after x amount of time
+
+
+
 //process.on('exit', exitEvent);
 //process.on('uncaughtException', uncaughtException);
 //process.on('unhandledRejection', unhandledPromiseRejection);
 process.on('SIGINT', function () {
 	// TODO Do not run this if validation is turned off.
-
+	console.warn('Received SIGINT')
 	if (dataToSave.length > 0) {
 		console.warn('Writing requests to file')
 
@@ -104,37 +109,45 @@ function addMockRoutes() {
 					return;
 				}
 
-				if (!mock.updateCache === true && (req.method.toLowerCase() === 'put' || req.method.toLowerCase() === 'post' || req.method.toLowerCase() === 'delete')) {
+				/*if (!mock.updateCache === true && (req.method.toLowerCase() === 'put' || req.method.toLowerCase() === 'post' || req.method.toLowerCase() === 'delete')) {
 					console.log('Mock has been invalidated', mock.path, req.method)
 					mock.invalidated = true;
-				}
+				}*/
 
 				console.warn('Running mock for path', req.path, ' and mock path', mock.path);
 
-				const mockResponseAdded = typeof mock.transformResponse === 'undefined'
+				//const mockResponseAdded = typeof mock.transformResponse === 'undefined'
+				let mockResponseAdded =  false;
 
-				if (mockResponseAdded) {
+				if (typeof mock.response !== 'undefined') {
 					utils.addMockResponse(mock, res, req);
+					mockResponseAdded = true;
 				}
 
-				createApiCall(req).then(async (response) => {
-					const body = await response.data;
-					//console.log('validating response', response.status, censorBody(body));
-					console.log('Response', response.status);
-					utils.validateMock(mock, response, body);
+				// TODO Transform request
 
-					if (!mockResponseAdded) {
-						const transformedResponse = mock.transformResponse.task(req, body, mock.state);
-						console.log('transformedResponse',transformedResponse)
-						res.status(response.status)
-						res.send(transformedResponse)
-					}
+				if (typeof options.proxyURL !== 'undefined') {
 
-					return body;
-				}).catch(error => {
-					validationErrors.push(error);
-					console.error(error);
-				});
+					createApiCall(req).then(async (response) => {
+						const body = await response.data;
+						//console.log('validating response', response.status, censorBody(body));
+						console.log('Response Status', response.status);
+						utils.validateMock(mock, response, body);
+
+						if (!mockResponseAdded && typeof mock.transformResponse === 'function') {
+							const transformedResponse = mock.transformResponse(req, body, mock.state);
+							console.log('transformedResponse', transformedResponse)
+							res.status(response.status)
+							res.send(transformedResponse)
+						}
+
+						return body;
+					}).catch(error => {
+						validationErrors.push(error);
+						console.error(error);
+					});
+
+				}
 
 			})
 
@@ -148,13 +161,15 @@ function addMockRoutes() {
 
 function config(suppliedOptions) {
 
+	console.log('Starting with config', suppliedOptions)
+
 	if (typeof suppliedOptions === 'undefined') {
 		throw Error('Must provide options');
 	}
 
-	if (typeof suppliedOptions.proxyURL === 'undefined') {
+	/*if (typeof suppliedOptions.proxyURL === 'undefined') {
 		throw Error('Must provide proxyURL');
-	}
+	}*/
 
 	if (typeof suppliedOptions.data === 'undefined') {
 		throw Error('Must provide data');
@@ -186,18 +201,18 @@ function run() {
 		if (req.method !== 'GET' && utils.isUpdateCacheMode(options))  {
 
 			const cacheTest = function (n) {
-				return req.path === n.path && n.method === 'GET' && JSON.stringify(req.params) ===  JSON.stringify(n.params);
+				return req.path === n.path && n.method === 'GET' && JSON.stringify(req.params) === JSON.stringify(n.params);
 			};
 			const cache = dataToSave.filter(cacheTest);
 
 			console.log('Checking to update cache for ', cache, req.path, req.method)
 
 			if (cache.length > 0) {
-				console.log('ATTEMPTING Updating cache for', req.path, req.method)
+				console.log('ATTEMPTING Updating cache for', cache.length, req.path, req.method)
 
 				const cacheResponse = cache[0].response;
 
-				if (req.method === 'POST') {
+				/*if (req.method === 'POST') {
 					if (Array.isArray(cacheResponse)) {
 						console.log('Adding to array', req.path, req.method)
 						cacheResponse.unshift(req.body)
@@ -205,14 +220,17 @@ function run() {
 						console.log('Adding to object', req.path, req.method)
 						cache[0].response = req.body;
 					}
-				}
+				}*/
 				/*else if (req.method === 'DELETE') {
 					// TODO WIll have to remove the id that is being deleted because the path will not match
-				} */
+				}
 				else {
 					console.log('Invalidating cache because method is not supported', req.path, req.method)
 					cache.forEach(c => c.invalidated = true)
-				}
+				}*/
+				console.log('Invalidating cache because method is not supported', req.path, req.method)
+				cache.forEach(c => c.invalidated = true)
+
 
 			} else {
 				console.log('No cache found for ', req.path, req.method)
@@ -247,32 +265,36 @@ function run() {
 			}
 		}
 
-		createApiCall(req).then(response => {
+		if (typeof options.proxyURL !== 'undefined') {
 
-			const body = response.data;
+			createApiCall(req).then(response => {
 
-			res.status(response.status);
+				const body = response.data;
 
-			Object.keys(response.headers).forEach(headerKey => {
-				const header = response.headers[headerKey];
-				if (headerKey !== 'transfer-encoding') {
-					res.set(headerKey, header);
+				res.status(response.status);
+
+				Object.keys(response.headers).forEach(headerKey => {
+					const header = response.headers[headerKey];
+					if (headerKey !== 'transfer-encoding') {
+						res.set(headerKey, header);
+					}
+				});
+
+				// TODO If learning mode then save requests and responses
+				if (utils.isLearningMode(options) || utils.isCacheMode(options)) {
+					dataToSave.push(utils.createObjectToSave(req, body, response))
 				}
+
+				return body;
+			}).then(body => {
+				console.log('API RESPONSE (PROXY)', req.path, req.method); // TODO Censor
+				res.send(body);
+			}).catch(err => {
+				res.send('ERROR. Check console.');
+				console.log(err);
 			});
 
-			// TODO If learning mode then save requests and responses
-			if (utils.isLearningMode(options) || utils.isCacheMode(options)) {
-				dataToSave.push(utils.createObjectToSave(req, body, response))
-			}
-
-			return body;
-		}).then(body => {
-			console.log('API RESPONSE (PROXY)', req.path, req.method); // TODO Censor
-			res.send(body);
-		}).catch(err => {
-			res.send('ERROR. Check console.');
-			console.log(err);
-		});
+		}
 
 	})
 
